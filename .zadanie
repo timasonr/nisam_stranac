@@ -1,0 +1,19 @@
+"""Update the list of commands
+1)"admin:show list" - display the list of registered users
+2)"admin:subject beginner:new topic" - Change the topic for beginners
+3)"admin:subject pro:new topic" - Change the topic for intermediate students
+4)"admin:subject advanced:new topic - Change the topic for advanced students
+5)"admin:subject online:new topic - Change the topic for online sessions
+6)"admin:time beginner:new time" - Change the time for beginners
+7)"admin:time pro:new time" - Change the time for intermediate students
+8)"admin:time advanced:new time - Change the time for advanced students
+9)"admin:time online:new time - Change the time for online sessions
+10)"admin:next date:new date" - Change the date of meetings
+11)"admin:next weekday:day of the week" - Change the day of the week
+12)"admin:clear list" - Clear the list of registered participants
+13)"admin:add group:group name" - Add a new group
+14)"admin:delete group:group name" - Delete a group
+15)"admin:subject:group name:new topic" - Change the topic for a new group
+16)"admin:time:group name:new time" - Change the time for a new group
+17)"admin:move group:group name:position" - Move a group to the specified position (1 - first position)
+"""
