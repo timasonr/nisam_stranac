@@ -1,26 +1,28 @@
+print("Запуск скрипта...")
 import asyncio
 import emoji
 import requests
 import pytz
 import os
+print("Базовые библиотеки импортированы...")
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
-from telegram.constants import ParseMode
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, \
-    CallbackContext
+print("Импорт telegram библиотек...")
+from telegram import ParseMode, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
+print("Все библиотеки импортированы успешно!")
 
 # Loading environment variables from .env file
 load_dotenv()
 
 # Getting token and admin ID from environment variables
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID"))  # Admin ID
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "adminadminadmin")
-API_TOKEN = os.getenv("API_TOKEN")  # Telegram bot token
-BOT_USERNAME = os.getenv("BOT_USERNAME")
-TARGET_USER_ID = int(os.getenv("TARGET_USER_ID", ADMIN_USER_ID))
-OWNER_USER_ID = int(os.getenv("OWNER_USER_ID", ADMIN_USER_ID))
-MAX_PARTICIPANTS = int(os.getenv("MAX_PARTICIPANTS", "100"))  # Maximum number of participants in each group
+ADMIN_USER_ID = 7984786953  # Admin ID
+ADMIN_PASSWORD = "adminadminadmin"
+API_TOKEN = "7401690820:AAHG3suZUs-YVkOxVFnkYsf7dQ9LPaOYu9o"  # Telegram bot token
+BOT_USERNAME = "@nisam_stranacbot"
+TARGET_USER_ID = 7984786953
+OWNER_USER_ID = 7126605969
+MAX_PARTICIPANTS = 200  # Maximum number of participants in each group
 # Dictionary to store group data
 group_data = {
     'Beginners': {'subject': '', 'time': ''},
@@ -32,6 +34,13 @@ group_data = {
 registrations = {group: set() for group in group_data.keys()}
 # Password for manual list clearing (replace with your desired password)
 CLEAR_PASSWORD = "your_password"
+# Russian translations for groups
+group_translations = {
+    'Beginners': 'Начинающие',
+    'Intermediate': 'Продолжающие',
+    'Advanced': 'Продвинутые',
+    'Online': 'Онлайн'
+}
 # Custom data
 subject_for_beginner = ''
 subject_for_pro = ''
@@ -64,59 +73,61 @@ def send_message(chat_id, text):
         print(f"Error sending message: {e}")
 
 
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def admin_command(update: Update, context: CallbackContext):
     if update.message.from_user.id != ADMIN_USER_ID:
         return
-    await admin_menu_command(update, context)
+    admin_menu_command(update, context)
 
 
-async def button(update: Update, context: CallbackContext):
+def button(update: Update, context: CallbackContext):
     query = update.callback_query
     if query.data == 'add_new_group':
-        await query.edit_message_text(
-            "Enter the name of the new group in the format:\nadmin:add group:group name"
+        query.edit_message_text(
+            "Введите название новой группы в формате:\nadmin:add group:название группы"
         )
     elif query.data == 'delete_group':
         # Create a list of buttons for all groups
         keyboard = []
         for group in group_data.keys():
-            keyboard.append([InlineKeyboardButton(f"Delete {group}", callback_data=f"confirm_delete:{group}")])
-        keyboard.append([InlineKeyboardButton("Back", callback_data="admin_menu")])
+            group_ru = group_translations.get(group, group)
+            keyboard.append([InlineKeyboardButton(f"Удалить {group_ru}", callback_data=f"confirm_delete:{group}")])
+        keyboard.append([InlineKeyboardButton("Назад", callback_data="admin_menu")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("Select a group to delete:", reply_markup=reply_markup)
+        query.edit_message_text("Выберите группу для удаления:", reply_markup=reply_markup)
     elif query.data.startswith('confirm_delete:'):
         group_name = query.data.split(':')[1]
         if delete_group(group_name):
-            await query.edit_message_text(f"Group '{group_name}' successfully deleted.")
+            group_ru = group_translations.get(group_name, group_name)
+            query.edit_message_text(f"Группа '{group_ru}' успешно удалена.")
         else:
-            await query.edit_message_text(f"Group '{group_name}' not found.")
+            query.edit_message_text(f"Группа не найдена.")
     elif query.data in [group.lower() for group in group_data.keys()]:
         # Dynamically call the registration function for the selected group
         group_name = next(group for group in group_data.keys() if group.lower() == query.data)
-        await sign_up_command(update, context, group_name)
+        sign_up_command(update, context, group_name)
     elif query.data == 'cancel':
-        await cancel_command(update, context)
+        cancel_command(update, context)
     elif query.data == 'closest_meeting':
-        await closest_meeting(update, context)
+        closest_meeting(update, context)
     elif query.data == 'check_assignments':
-        await check_assignments(update, context)
+        check_assignments(update, context)
     elif query.data == 'menu':
-        await menu_command(update, context)
+        menu_command(update, context)
     elif query.data == 'admin_menu':
-        await admin_menu_command(update, context)
+        admin_menu_command(update, context)
     else:
-        await query.edit_message_text("This option does not exist, please choose again.")
+        query.edit_message_text("Данная опция не существует, пожалуйста, выберите снова.")
 
 
 # Commands
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start_command(update: Update, context: CallbackContext):
     # Buttons and menu items
     keyboard = [
         [
-            InlineKeyboardButton("Menu", callback_data="menu")
+            InlineKeyboardButton("Меню", callback_data="menu")
         ],
         [
-            InlineKeyboardButton("Next meeting", callback_data="closest_meeting")
+            InlineKeyboardButton("Ближайшая встреча", callback_data="closest_meeting")
         ]
     ]
     
@@ -125,72 +136,76 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Add buttons for all groups
     for group in group_data.keys():
-        button_text = f"Register for {group}" if group in default_groups else f"Register for {group}"
+        group_ru = group_translations.get(group, group)
+        button_text = f"Записаться на {group_ru}" if group in default_groups else f"Записаться на {group_ru}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=group.lower())])
     
     # Add the cancel registration button at the end
-    keyboard.append([InlineKeyboardButton("Cancel registration", callback_data="cancel")])
+    keyboard.append([InlineKeyboardButton("Отменить запись", callback_data="cancel")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
+    update.message.reply_text(
         f"""
-Hello!{emoji.emojize(':waving_hand:')}
+Привет!{emoji.emojize(':waving_hand:')}
 
-I am a helper bot for registering for the conversation club at
-<b>"Nisam stranac"</b> school.
+Я бот-помощник для записи на разговорный клуб в
+школе <b>"Nisam stranac"</b>.
 
-* Conversation clubs are held every week.{emoji.emojize(':spiral_calendar:')}
-* Address: Futoška 1a, 5th floor, office 510.{emoji.emojize(':round_pushpin:')}\n
-Use the buttons below to navigate the bot.\n
-The <b>"Next meeting"</b> button will tell you about the topics of future conversation clubs.\n
-Friends, if you can't make it, please cancel your registration.""", reply_markup=reply_markup,
+* Разговорные клубы проходят каждую неделю.{emoji.emojize(':spiral_calendar:')}
+* Адрес: Футошка 1а, 5 этаж, офис 510.{emoji.emojize(':round_pushpin:')}\n
+Используйте кнопки ниже для навигации по боту.\n
+Кнопка <b>"Ближайшая встреча"</b> расскажет вам о темах будущих разговорных клубов.\n
+Друзья, если вы не можете прийти, пожалуйста, отмените свою регистрацию.""", reply_markup=reply_markup,
         parse_mode=ParseMode.HTML)
 
 
-async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def menu_command(update: Update, context: CallbackContext):
     """Handles the /menu command."""
     keyboard = []
     # List of standard groups
     default_groups = {'Beginners', 'Intermediate', 'Advanced', 'Online'}
     
     for group in group_data.keys():
-        button_text = f"Register for {group}" if group in default_groups else f"Register for {group}"
+        group_ru = group_translations.get(group, group)
+        button_text = f"Записаться на {group_ru}" if group in default_groups else f"Записаться на {group_ru}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=group.lower())])
-    keyboard.append([InlineKeyboardButton("Cancel registration", callback_data="cancel")])
+    keyboard.append([InlineKeyboardButton("Отменить запись", callback_data="cancel")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     if update.message:
-        await update.message.reply_text("Menu", reply_markup=reply_markup)
+        update.message.reply_text("Меню", reply_markup=reply_markup)
     else:
-        await update.callback_query.edit_message_text("Menu", reply_markup=reply_markup)
+        update.callback_query.edit_message_text("Меню", reply_markup=reply_markup)
 
 
-async def closest_meeting(update, context: ContextTypes.DEFAULT_TYPE):
+def closest_meeting(update, context: CallbackContext):
     """Handles the /when_is_closest_meeting command."""
     keyboard = []
     # List of standard groups
     default_groups = {'Beginners', 'Intermediate', 'Advanced', 'Online'}
     
     for group in group_data.keys():
-        button_text = f"Register for {group}" if group in default_groups else f"Register for {group}"
+        group_ru = group_translations.get(group, group)
+        button_text = f"Записаться на {group_ru}" if group in default_groups else f"Записаться на {group_ru}"
         keyboard.append([InlineKeyboardButton(button_text, callback_data=group.lower())])
-    keyboard.append([InlineKeyboardButton("Menu", callback_data="menu")])
+    keyboard.append([InlineKeyboardButton("Меню", callback_data="menu")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     global next_date
     
-    text = f"Next meeting is on <b>{next_weekday}</b>, <b>{next_date}</b>.\n\n"
+    text = f"Следующая встреча в <b>{next_weekday}</b>, <b>{next_date}</b>.\n\n"
     for group, data in group_data.items():
-        group_text = f"for {group}" if group in default_groups else group
-        text += f"Topic {group_text} at <b>{data['time']}</b>:\n{data['subject']}\n\n"
+        group_ru = group_translations.get(group, group)
+        group_text = f"для группы {group_ru}" if group in default_groups else group_ru
+        text += f"Тема {group_text} в <b>{data['time']}</b>:\n{data['subject']}\n\n"
     
     if update.message:
-        await update.message.reply_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        update.message.reply_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
     else:
-        await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        update.callback_query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
 
-async def sign_up_command(update: Update, context: ContextTypes.DEFAULT_TYPE, group_name: str):
+def sign_up_command(update: Update, context: CallbackContext, group_name: str):
     """Universal function for registration in any group"""
     user_name = update.effective_user.full_name
     user_tag = update.effective_user.username
@@ -202,60 +217,61 @@ async def sign_up_command(update: Update, context: ContextTypes.DEFAULT_TYPE, gr
     
     keyboard = [
         [
-            InlineKeyboardButton("Next meeting", callback_data="closest_meeting")
+            InlineKeyboardButton("Ближайшая встреча", callback_data="closest_meeting")
         ],
         [
-            InlineKeyboardButton("Menu", callback_data="menu")
+            InlineKeyboardButton("Меню", callback_data="menu")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     # Format text based on group type
-    group_text = f"for {group_name}" if group_name in default_groups else group_name
+    group_ru = group_translations.get(group_name, group_name)
+    group_text = f"для группы {group_ru}" if group_name in default_groups else group_ru
 
     if user_name_n_tag in registrations[group_name]:
         if update.message:
-            await update.message.reply_text(f"You are already registered for the meeting {group_text}.",
+            update.message.reply_text(f"Вы уже зарегистрированы на встречу {group_text}.",
                                             reply_markup=reply_markup)
         else:
-            await update.callback_query.edit_message_text(text=f"You are already registered for the meeting {group_text}.",
+            update.callback_query.edit_message_text(text=f"Вы уже зарегистрированы на встречу {group_text}.",
                                                           reply_markup=reply_markup)
     elif registrations[group_name].__len__() >= MAX_PARTICIPANTS:
         if update.message:
-            await update.message.reply_text(f"Meetings for {group_text} are full.", reply_markup=reply_markup)
+            update.message.reply_text(f"Встречи для {group_text} заполнены.", reply_markup=reply_markup)
         else:
-            await update.callback_query.edit_message_text(text=f"Meetings for {group_text} are full.",
+            update.callback_query.edit_message_text(text=f"Встречи для {group_text} заполнены.",
                                                           reply_markup=reply_markup)
     else:
         registrations[group_name].add(user_name_n_tag)
         if update.message:
-            await update.message.reply_text(
-                f"""You have successfully registered for the meeting {group_text}
-{next_date} at {group_data[group_name]['time']}.""",
+            update.message.reply_text(
+                f"""Вы успешно зарегистрировались на встречу {group_text}
+{next_date} в {group_data[group_name]['time']}.""",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Cancel registration", callback_data="cancel")],
-                     [InlineKeyboardButton("Menu", callback_data="menu")]]
+                    [[InlineKeyboardButton("Отменить запись", callback_data="cancel")],
+                     [InlineKeyboardButton("Меню", callback_data="menu")]]
                 ))
             send_message(chat_id=TARGET_USER_ID,
-                         text=f"{user_name} - registered for the meeting {group_text} {next_date}")
+                         text=f"{user_name} - зарегистрирован на встречу {group_text} {next_date}")
             send_message(chat_id=OWNER_USER_ID,
-                         text=f"{user_name} - registered for the meeting {group_text} {next_date}")
+                         text=f"{user_name} - зарегистрирован на встречу {group_text} {next_date}")
         else:
-            await update.callback_query.edit_message_text(
-                f"""You have successfully registered for the meeting {group_text}
-{next_date} at {group_data[group_name]['time']}.""",
+            update.callback_query.edit_message_text(
+                f"""Вы успешно зарегистрировались на встречу {group_text}
+{next_date} в {group_data[group_name]['time']}.""",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Cancel registration", callback_data="cancel")],
-                     [InlineKeyboardButton("Menu", callback_data="menu")]]
+                    [[InlineKeyboardButton("Отменить запись", callback_data="cancel")],
+                     [InlineKeyboardButton("Меню", callback_data="menu")]]
                 )
             )
             send_message(chat_id=TARGET_USER_ID,
-                         text=f"{user_name} - registered for the meeting {group_text} {next_date}")
+                         text=f"{user_name} - зарегистрирован на встречу {group_text} {next_date}")
             send_message(chat_id=OWNER_USER_ID,
-                         text=f"{user_name} - registered for the meeting {group_text} {next_date}")
+                         text=f"{user_name} - зарегистрирован на встречу {group_text} {next_date}")
 
 
-async def check_assignments(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def check_assignments(update: Update, context: CallbackContext):
     """Handles the /check_assignments command."""
     user_name = update.effective_user.full_name
     user_tag = update.effective_user.username
@@ -263,18 +279,18 @@ async def check_assignments(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global next_date
     keyboard = [
         [
-            InlineKeyboardButton("Cancel registration", callback_data="cancel")
+            InlineKeyboardButton("Отменить запись", callback_data="cancel")
         ],
         [
-            InlineKeyboardButton("Menu", callback_data="menu")
+            InlineKeyboardButton("Меню", callback_data="menu")
         ]
     ]
     keyboard2 = [
         [
-            InlineKeyboardButton("Next meeting", callback_data="closest_meeting")
+            InlineKeyboardButton("Ближайшая встреча", callback_data="closest_meeting")
         ],
         [
-            InlineKeyboardButton("Menu", callback_data="menu")
+            InlineKeyboardButton("Меню", callback_data="menu")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -286,45 +302,45 @@ async def check_assignments(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_registered_beginner and is_registered_pro:
         # User is signed up for both meetings
         if update.message:
-            await update.message.reply_text(
-                f"You are registered for both meetings on Friday, {next_date}:\n"
-                f"* For beginners in {time_for_beginner}.\n"
-                f"* For continuers in {time_for_pro}.", reply_markup=reply_markup)
+            update.message.reply_text(
+                f"Вы зарегистрированы на обе встречи в пятницу, {next_date}:\n"
+                f"* Для начинающих в {time_for_beginner}.\n"
+                f"* Для продолжающих в {time_for_pro}.", reply_markup=reply_markup)
         else:
-            await update.callback_query.edit_message_text(
-                f"You are registered for both meetings on Friday, {next_date}:\n"
-                f"* For beginners in {time_for_beginner}.\n"
-                f"* For continuers in {time_for_pro}.", reply_markup=reply_markup)
+            update.callback_query.edit_message_text(
+                f"Вы зарегистрированы на обе встречи в пятницу, {next_date}:\n"
+                f"* Для начинающих в {time_for_beginner}.\n"
+                f"* Для продолжающих в {time_for_pro}.", reply_markup=reply_markup)
     elif is_registered_beginner:
         # User is only signed up for beginner meeting
         if update.message:
-            await update.message.reply_text(
-                f"You are registered for the beginner meeting on Friday, {next_date} at {time_for_beginner}.",
+            update.message.reply_text(
+                f"Вы зарегистрированы на встречу для начинающих в пятницу, {next_date} в {time_for_beginner}.",
                 reply_markup=reply_markup)
         else:
-            await update.callback_query.edit_message_text(
-                f"You are registered for the beginner meeting on Friday, {next_date} at {time_for_beginner}.",
+            update.callback_query.edit_message_text(
+                f"Вы зарегистрированы на встречу для начинающих в пятницу, {next_date} в {time_for_beginner}.",
                 reply_markup=reply_markup)
     elif is_registered_pro:
         # User is only signed up for pro meeting
         if update.message:
-            await update.message.reply_text(
-                f"You are registered for the pro meeting on Friday, {next_date} at {time_for_pro}.",
+            update.message.reply_text(
+                f"Вы зарегистрированы на встречу для продолжающих в пятницу, {next_date} в {time_for_pro}.",
                 reply_markup=reply_markup)
         else:
-            await update.callback_query.edit_message_text(
-                f"You are registered for the pro meeting on Friday, {next_date} at {time_for_pro}.",
+            update.callback_query.edit_message_text(
+                f"Вы зарегистрированы на встречу для продолжающих в пятницу, {next_date} в {time_for_pro}.",
                 reply_markup=reply_markup)
     else:
         # User is not signed up for any meetings
         if update.message:
-            await update.message.reply_text("You are not registered for any meetings.", reply_markup=reply_markup2)
+            update.message.reply_text("Вы не зарегистрированы ни на одну встречу.", reply_markup=reply_markup2)
         else:
-            await update.callback_query.edit_message_text("You are not registered for any meetings.",
+            update.callback_query.edit_message_text("Вы не зарегистрированы ни на одну встречу.",
                                                           reply_markup=reply_markup2)
 
 
-async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def cancel_command(update: Update, context: CallbackContext):
     """Handles the /cancel command."""
     user_name = update.effective_user.full_name
     user_tag = update.effective_user.username
@@ -332,10 +348,10 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global next_date
     keyboard = [
         [
-            InlineKeyboardButton("Next meeting", callback_data="closest_meeting")
+            InlineKeyboardButton("Ближайшая встреча", callback_data="closest_meeting")
         ],
         [
-            InlineKeyboardButton("Menu", callback_data="menu")
+            InlineKeyboardButton("Меню", callback_data="menu")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -344,123 +360,124 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for group_name in group_data.keys():
         if user_name_n_tag in registrations[group_name]:
             registrations[group_name].remove(user_name_n_tag)
+            group_ru = group_translations.get(group_name, group_name)
             send_message(chat_id=TARGET_USER_ID,
-                          text=f"{user_name} - canceled registration for {group_name} {next_date}")
+                          text=f"{user_name} - отменил регистрацию на {group_ru} {next_date}")
             send_message(chat_id=OWNER_USER_ID,
-                          text=f"{user_name} - canceled registration for {group_name} {next_date}")
+                          text=f"{user_name} - отменил регистрацию на {group_ru} {next_date}")
             if update.message:
-                await update.message.reply_text("You are no longer registered for any meetings.", reply_markup=reply_markup)
+                update.message.reply_text("Вы больше не зарегистрированы ни на одну встречу.", reply_markup=reply_markup)
             else:
-                await update.callback_query.edit_message_text(text="You are no longer registered for any meetings.", reply_markup=reply_markup)
+                update.callback_query.edit_message_text(text="Вы больше не зарегистрированы ни на одну встречу.", reply_markup=reply_markup)
             return
 
     # If the user was not found in any group
     if update.message:
-        await update.message.reply_text("You are no longer registered for any meetings.", reply_markup=reply_markup)
+        update.message.reply_text("Вы не зарегистрированы ни на одну встречу.", reply_markup=reply_markup)
     else:
-        await update.callback_query.edit_message_text(text="You are no longer registered for any meetings.", reply_markup=reply_markup)
+        update.callback_query.edit_message_text(text="Вы не зарегистрированы ни на одну встречу.", reply_markup=reply_markup)
 
 
 # Admin commands
-async def admin_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def admin_menu_command(update: Update, context: CallbackContext):
     """Handles the /admin_menu command."""
     keyboard = [
         [
-            InlineKeyboardButton("Add new group", callback_data="add_new_group"),
+            InlineKeyboardButton("Добавить новую группу", callback_data="add_new_group"),
         ],
         [
-            InlineKeyboardButton("Delete group", callback_data="delete_group"),
+            InlineKeyboardButton("Удалить группу", callback_data="delete_group"),
         ],
         [
-            InlineKeyboardButton("Change topic for beginners", callback_data="change_subject_for_beginner"),
+            InlineKeyboardButton("Изменить тему для начинающих", callback_data="change_subject_for_beginner"),
         ],
         [
-            InlineKeyboardButton("Change topic for continuers", callback_data="change_subject_for_pro"),
+            InlineKeyboardButton("Изменить тему для продолжающих", callback_data="change_subject_for_pro"),
         ],
         [
-            InlineKeyboardButton("Change topic for online", callback_data="change_subject_for_online"),
+            InlineKeyboardButton("Изменить тему для онлайн", callback_data="change_subject_for_online"),
         ],
         [
-            InlineKeyboardButton("Change time for beginners", callback_data="change_time_for_beginner"),
+            InlineKeyboardButton("Изменить время для начинающих", callback_data="change_time_for_beginner"),
         ],
         [
-            InlineKeyboardButton("Change time for continuers", callback_data="change_time_for_pro"),
+            InlineKeyboardButton("Изменить время для продолжающих", callback_data="change_time_for_pro"),
         ],
         [
-            InlineKeyboardButton("Change time for online", callback_data="change_time_for_online"),
+            InlineKeyboardButton("Изменить время для онлайн", callback_data="change_time_for_online"),
         ],
         [
-            InlineKeyboardButton("Change date", callback_data="change_next_friday"),
+            InlineKeyboardButton("Изменить дату", callback_data="change_next_friday"),
         ],
         [
-            InlineKeyboardButton("Back", callback_data="menu")
+            InlineKeyboardButton("Назад", callback_data="menu")
         ]
     ]
     admin_menu_keyboard = InlineKeyboardMarkup(keyboard)
     if update.message:
-        await update.message.reply_text("Choose action:", reply_markup=admin_menu_keyboard)
+        update.message.reply_text("Выберите действие:", reply_markup=admin_menu_keyboard)
     else:
-        await update.callback_query.edit_message_text("Choose action:", reply_markup=admin_menu_keyboard)
-    print('Admin menu opened')
+        update.callback_query.edit_message_text("Выберите действие:", reply_markup=admin_menu_keyboard)
+    print('Открыто меню администратора')
 
 
-async def change_subject_for_beginner(update, context):
+def change_subject_for_beginner(update, context):
     """Handles the /change_subject_for_beginner command."""
     split_message = update.message.text.split(":")
     global subject_for_beginner
     subject_for_beginner = split_message[2].capitalize()
-    await update.message.reply_text(f"Current topic for beginners: {subject_for_beginner}")
+    update.message.reply_text(f"Текущая тема для начинающих: {subject_for_beginner}")
 
 
-async def save_subject_for_beginner(update, context):
+def save_subject_for_beginner(update, context):
     pass
 
 
-async def change_subject_for_pro(update, context):
+def change_subject_for_pro(update, context):
     """Handles the /change_subject_for_pro command."""
     split_message = update.message.text.split(":")
     global subject_for_pro
     subject_for_pro = split_message[2].capitalize()
-    await update.message.reply_text(f"Current topic for continuers: {subject_for_pro}")
+    update.message.reply_text(f"Текущая тема для продолжающих: {subject_for_pro}")
 
 
-async def save_subject_for_pro(update, context):
+def save_subject_for_pro(update, context):
     pass
 
 
-async def change_time_for_beginner(update, context):
+def change_time_for_beginner(update, context):
     pass
 
 
-async def save_time_for_beginner(update, context):
+def save_time_for_beginner(update, context):
     pass
 
 
-async def change_time_for_pro(update, context):
+def change_time_for_pro(update, context):
     pass
 
 
-async def save_time_for_pro(update, context):
+def save_time_for_pro(update, context):
     pass
 
 
-async def change_next_friday(update, context):
+def change_next_friday(update, context):
     pass
 
 
-async def save_next_friday(update, context):
+def save_next_friday(update, context):
     pass
 
 
-async def change_subject_for_online(update, context):
+def change_subject_for_online(update, context):
     """Handles the /change_subject_for_online command."""
     split_message = update.message.text.split(":")
     global subject_for_online
     subject_for_online = split_message[2].capitalize()
-    await update.message.reply_text(f"Current topic for online: {subject_for_online}")
+    update.message.reply_text(f"Текущая тема для онлайн: {subject_for_online}")
 
 
-async def change_time_for_online(update, context):
+def change_time_for_online(update, context):
     # ... similar to other functions ...
     pass
 
@@ -512,89 +529,135 @@ def move_group(group_name: str, position: int) -> bool:
     return True
 
 
-def handle_response(text: str, context: ContextTypes.DEFAULT_TYPE, update: Update) -> str:
+def handle_response(text: str, context: CallbackContext, update: Update) -> str:
     """Handles admin commands."""
     processed_text = text.lower()
     # List of standard groups
     default_groups = {'Beginners', 'Intermediate', 'Advanced', 'Online'}
 
+    # Обработка русскоязычных команд
+    if processed_text in ["старт", "начать", "привет", "начало", "help", "помощь"]:
+        start_command(update, context)
+        return ""
+
     if "admin:show list" in processed_text:
         result = ""
         for group, users in registrations.items():
-            result += f"{group}:\n{', '.join(users)}\n\n"
+            group_ru = group_translations.get(group, group)
+            result += f"{group_ru}:\n{', '.join(users)}\n\n"
         return result
 
     elif "admin:add group:" in processed_text:
         group_name = text.split(":", 2)[2].strip()
         if add_new_group(group_name):
-            return f"Group '{group_name}' successfully added."
+            return f"Группа '{group_name}' успешно добавлена."
         else:
-            return f"Group '{group_name}' already exists."
+            return f"Группа '{group_name}' уже существует."
 
     elif "admin:delete group:" in processed_text:
         group_name = text.split(":", 2)[2].strip()
         if delete_group(group_name):
-            return f"Group '{group_name}' successfully deleted."
+            return f"Группа '{group_name}' успешно удалена."
         else:
-            return f"Group '{group_name}' not found."
+            return f"Группа '{group_name}' не найдена."
 
     elif "admin:subject" in processed_text:
-        parts = text.split(":")
-        # Проверяем формат команды для новых групп (admin:subject:группа:тема)
-        if len(parts) == 4 and parts[1].strip() == "subject":
-            group = parts[2].strip()
-            subject = parts[3].strip()
-            if group in group_data and group not in default_groups:
-                group_data[group]['subject'] = subject
-                return f"Topic for group '{group}' updated: {subject}"
-            elif group not in group_data:
-                return f"Group '{group}' not found."
+        # Сначала проверяем, является ли это командой для настройки темы новой группы
+        if text.startswith("admin:subject:"):
+            # Обработка для новых групп (admin:subject:группа:тема)
+            # Разделяем первые две части (admin:subject)
+            prefix = ":".join(text.split(":", 2)[:2])
+            # Получаем остаток строки после admin:subject:
+            remainder = text[len(prefix)+1:]
+            # Находим первое двоеточие в remainder, это разделитель между группой и темой
+            if ":" in remainder:
+                separator_index = remainder.find(":")
+                group = remainder[:separator_index].strip()
+                subject = remainder[separator_index+1:].strip()
+                
+                if group in group_data and group not in default_groups:
+                    group_data[group]['subject'] = subject
+                    return f"Тема для группы '{group}' обновлена: {subject}"
+                elif group not in group_data:
+                    return f"Группа '{group}' не найдена."
+                else:
+                    return "Используйте другой формат команды для стандартных групп."
             else:
-                return "Use a different command format for standard groups."
+                return "Неверный формат команды. Используйте: admin:subject:группа:тема"
         # Стандартный формат для предустановленных групп (admin:subject группа:тема)
-        elif len(parts) == 3:
-            group = parts[1].strip()
-            subject = parts[2].strip()
-            if group in default_groups:
-                group_data[group]['subject'] = subject
-                return f"Topic for group '{group}' updated: {subject}"
-        return "Invalid command format"
+        else:
+            parts = text.split(":", 2)
+            if len(parts) >= 2:
+                # admin:subject группа:тема (первая часть "admin:subject группа", вторая - "тема")
+                first_part = parts[0]
+                group_parts = first_part.split()
+                if len(group_parts) >= 2 and group_parts[0].lower() == "admin:subject":
+                    group = group_parts[1]
+                    subject = parts[1]
+                    if len(parts) > 2:  # Если есть еще части в теме
+                        subject += ":" + ":".join(parts[2:])
+                    
+                    if group in default_groups:
+                        group_data[group]['subject'] = subject
+                        return f"Тема для группы '{group}' обновлена: {subject}"
+            
+            return "Неверный формат команды. Для стандартных групп используйте: admin:subject группа:тема"
 
     elif "admin:time" in processed_text:
-        parts = text.split(":")
-        # Проверяем формат команды для новых групп (admin:time:группа:время)
-        if len(parts) == 4 and parts[1].strip() == "time":
-            group = parts[2].strip()
-            time = parts[3].strip()
-            if group in group_data and group not in default_groups:
-                group_data[group]['time'] = time
-                return f"Time for group '{group}' updated: {time}"
-            elif group not in group_data:
-                return f"Group '{group}' not found."
+        # Сначала проверяем, является ли это командой для настройки времени
+        if text.startswith("admin:time:"):
+            # Обработка для новых групп (admin:time:группа:время)
+            # Разделяем первые две части (admin:time)
+            prefix = ":".join(text.split(":", 2)[:2])
+            # Получаем остаток строки после admin:time:
+            remainder = text[len(prefix)+1:]
+            # Находим первое двоеточие в remainder, это разделитель между группой и временем
+            if ":" in remainder:
+                separator_index = remainder.find(":")
+                group = remainder[:separator_index].strip()
+                time = remainder[separator_index+1:].strip()
+                
+                if group in group_data and group not in default_groups:
+                    group_data[group]['time'] = time
+                    return f"Время для группы '{group}' обновлено: {time}"
+                elif group not in group_data:
+                    return f"Группа '{group}' не найдена."
+                else:
+                    return "Используйте другой формат команды для стандартных групп."
             else:
-                return "Use a different command format for standard groups."
+                return "Неверный формат команды. Используйте: admin:time:группа:время"
         # Стандартный формат для предустановленных групп (admin:time группа:время)
-        elif len(parts) == 3:
-            group = parts[1].strip()
-            time = parts[2].strip()
-            if group in default_groups:
-                group_data[group]['time'] = time
-                return f"Time for group '{group}' updated: {time}"
-        return "Invalid command format"
+        else:
+            parts = text.split(":", 2)
+            if len(parts) >= 2:
+                # admin:time группа:время (первая часть "admin:time группа", вторая - "время")
+                first_part = parts[0]
+                group_parts = first_part.split()
+                if len(group_parts) >= 2 and group_parts[0].lower() == "admin:time":
+                    group = group_parts[1]
+                    time = parts[1]
+                    if len(parts) > 2:  # Если есть еще части (например, секунды)
+                        time += ":" + ":".join(parts[2:])
+                    
+                    if group in default_groups:
+                        group_data[group]['time'] = time
+                        return f"Время для группы '{group}' обновлено: {time}"
+            
+            return "Неверный формат команды. Для стандартных групп используйте: admin:time группа:время"
 
     elif "admin:next date:" in processed_text:
         global next_date
         next_date = text.split(":", 2)[2].strip()
-        return f"Current date: {next_date}"
+        return f"Текущая дата: {next_date}"
 
     elif "admin:next weekday:" in processed_text:
         global next_weekday
         next_weekday = text.split(":", 2)[2].strip()
-        return f"Current day of the week: {next_weekday}"
+        return f"Текущий день недели: {next_weekday}"
 
     elif "admin:clear list" in processed_text:
         clear_registrations()
-        return "Registrations cleared."
+        return "Все регистрации очищены."
 
     elif "admin:move group:" in processed_text:
         parts = text.split(":")
@@ -603,18 +666,18 @@ def handle_response(text: str, context: ContextTypes.DEFAULT_TYPE, update: Updat
             try:
                 position = int(parts[3].strip())
                 if move_group(group_name, position):
-                    return f"Group '{group_name}' successfully moved to position {position}."
+                    return f"Группа '{group_name}' успешно перемещена на позицию {position}."
                 else:
-                    return f"Group '{group_name}' not found."
+                    return f"Группа '{group_name}' не найдена."
             except ValueError:
-                return "Invalid position format. Use a number."
-        return "Invalid command format. Use: admin:move group:group name:position"
+                return "Неверный формат позиции. Используйте число."
+        return "Неверный формат команды. Используйте: admin:move group:название группы:позиция"
 
     else:
-        return "I don't know how to respond to that."
+        return "Я не знаю, как ответить на это. Используйте команду /start для вызова главного меню или нажмите на одну из кнопок ниже."
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def handle_message(update: Update, context: CallbackContext):
     message_type: str = update.message.chat.type
     text: str = update.message.text
 
@@ -633,10 +696,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"- {group}: {', '.join(user.split(', ')[0] for user in users)}")
 
     print('Bot say: ' + responce)
-    await update.message.reply_text(responce)
+    update.message.reply_text(responce)
 
 
-async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def error(update: Update, context: CallbackContext):
     print(f"Update {update} caused error {context.error}")
 
 
@@ -650,23 +713,26 @@ def add_new_group(group_name: str):
 
 
 if __name__ == '__main__':
-    print('Bot starting...')
-    application = Application.builder().token(API_TOKEN).build()
+    print('Бот запускается...')
+    updater = Updater(API_TOKEN)
+    dispatcher = updater.dispatcher
 
     # Commands
-    application.add_handler(CommandHandler('start', start_command))
-    application.add_handler(CommandHandler('closest_meeting', closest_meeting))
-    application.add_handler(CommandHandler('check_assignments', check_assignments))
-    application.add_handler(CommandHandler('cancel_assignment', cancel_command))
+    dispatcher.add_handler(CommandHandler('start', start_command))
+    dispatcher.add_handler(CommandHandler('satrt', start_command))  # Обработка опечатки
+    dispatcher.add_handler(CommandHandler('closest_meeting', closest_meeting))
+    dispatcher.add_handler(CommandHandler('check_assignments', check_assignments))
+    dispatcher.add_handler(CommandHandler('cancel_assignment', cancel_command))
+    dispatcher.add_handler(CommandHandler('cancel', cancel_command))  # Альтернативная команда для отмены
     # Work in progress
-    application.add_handler(CommandHandler('admin', admin_command))
-    application.add_handler(CommandHandler('change_subject_for_beginner', change_subject_for_beginner))
-    application.add_handler(CommandHandler('change_subject_for_pro', change_subject_for_pro))
-    application.add_handler(CommandHandler('change_time_for_beginner', change_time_for_beginner))
-    application.add_handler(CommandHandler('change_time_for_pro', change_time_for_pro))
-    application.add_handler(CommandHandler('change_next_friday', change_next_friday))
-    application.add_handler(CommandHandler('change_subject_for_online', change_subject_for_online))
-    application.add_handler(CommandHandler('change_time_for_online', change_time_for_online))
+    dispatcher.add_handler(CommandHandler('admin', admin_command))
+    dispatcher.add_handler(CommandHandler('change_subject_for_beginner', change_subject_for_beginner))
+    dispatcher.add_handler(CommandHandler('change_subject_for_pro', change_subject_for_pro))
+    dispatcher.add_handler(CommandHandler('change_time_for_beginner', change_time_for_beginner))
+    dispatcher.add_handler(CommandHandler('change_time_for_pro', change_time_for_pro))
+    dispatcher.add_handler(CommandHandler('change_next_friday', change_next_friday))
+    dispatcher.add_handler(CommandHandler('change_subject_for_online', change_subject_for_online))
+    dispatcher.add_handler(CommandHandler('change_time_for_online', change_time_for_online))
     # application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
 
     # Conf scheduler
@@ -675,13 +741,15 @@ if __name__ == '__main__':
     scheduler.start()
 
     # Buttons
-    application.add_handler(CallbackQueryHandler(button))
+    dispatcher.add_handler(CallbackQueryHandler(button))
 
     # Messages
-    application.add_handler(MessageHandler(filters.TEXT, handle_message))
+    dispatcher.add_handler(MessageHandler(Filters.text, handle_message))
 
     # Errors
-    application.add_error_handler(error)
+    dispatcher.add_error_handler(error)
+    
     # Polls the bot
-    print('Polling...')
-    application.run_polling(poll_interval= 1)
+    print('Опрос начат...')
+    updater.start_polling(poll_interval=1)
+    updater.idle()
